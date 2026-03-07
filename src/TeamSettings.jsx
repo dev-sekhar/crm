@@ -1,6 +1,7 @@
 // src/TeamSettings.jsx
 import { useState, useEffect } from 'react'
 import { supabase } from './supabaseClient'
+import StageManager from './StageManager'
 import {
   RESOURCES, RESOURCE_ACTIONS, ALL_ACTIONS, ACTION_LABELS,
   ROLES, ROLE_COLORS, getRoleColor,
@@ -11,11 +12,14 @@ import {
 
 // Constants imported from permissions.js
 
-const Modal = ({ title, onClose, children, width = 560 }) => (
-  <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300 }}>
-    <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 16, width, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.18)', animation: 'popIn 0.18s ease' }}>
+const Modal = ({ title, onClose, children, width = 560, readOnly = false }) => (
+  <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300 }}>
+    <div style={{ background: '#fff', borderRadius: 16, width, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.18)', animation: 'popIn 0.18s ease' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px 24px', borderBottom: '1px solid #f0ede8' }}>
-        <span style={{ fontFamily: 'Syne,sans-serif', fontWeight: 800, fontSize: 18 }}>{title}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontFamily: 'Syne,sans-serif', fontWeight: 800, fontSize: 18 }}>{title}</span>
+          {readOnly && <span style={{ background: '#f0ede8', color: '#888', fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 20, textTransform: 'uppercase', letterSpacing: '0.04em' }}>View only</span>}
+        </div>
         <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#aaa' }}>✕</button>
       </div>
       <div style={{ padding: 24 }}>{children}</div>
@@ -66,7 +70,7 @@ const PermissionMatrix = ({ permissions, onChange, disabled }) => (
 )
 
 // ─── Role Card ────────────────────────────────────────────────
-const RoleCard = ({ role, permissions, memberCount, canEdit, onEdit, onDelete }) => {
+const RoleCard = ({ role, permissions, memberCount, canEdit, canView, onEdit, onDelete }) => {
   const permCount = Object.values(permissions).filter(Boolean).length
   return (
     <div style={{ background: '#fff', border: '1px solid #e8e5e0', borderRadius: 12, padding: 18, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -75,6 +79,7 @@ const RoleCard = ({ role, permissions, memberCount, canEdit, onEdit, onDelete })
           <div style={{ width: 10, height: 10, borderRadius: '50%', background: getRoleColor(role.name), flexShrink: 0 }} />
           <span style={{ fontWeight: 700, fontSize: 15, color: '#1a1a1a' }}>{role.name}</span>
           {role.is_default && <span style={{ background: '#f0ede8', color: '#888', fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 20, textTransform: 'uppercase' }}>Default</span>}
+          {canView && !canEdit && <span style={{ background: '#e8f5e9', color: '#2e7d32', fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 20, textTransform: 'uppercase' }}>🔒 Locked</span>}
         </div>
         <p style={{ fontSize: 13, color: '#888', margin: '0 0 8px 20px' }}>{role.description || 'No description'}</p>
         <div style={{ display: 'flex', gap: 12, marginLeft: 20 }}>
@@ -82,18 +87,25 @@ const RoleCard = ({ role, permissions, memberCount, canEdit, onEdit, onDelete })
           <span style={{ fontSize: 12, color: '#aaa' }}>🔑 {permCount} permission{permCount !== 1 ? 's' : ''}</span>
         </div>
       </div>
-      {canEdit && (
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={onEdit} style={{ background: '#f5f5f0', border: 'none', borderRadius: 8, padding: '7px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', color: '#444' }}>✏ Edit</button>
-          {!role.is_default && <button onClick={onDelete} style={{ background: '#fce4ec', border: 'none', borderRadius: 8, padding: '7px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', color: '#c62828' }}>🗑</button>}
-        </div>
-      )}
+      <div style={{ display: 'flex', gap: 8 }}>
+        {/* View button for locked roles (Owner) */}
+        {canView && !canEdit && (
+          <button onClick={onEdit} style={{ background: '#f5f5f0', border: 'none', borderRadius: 8, padding: '7px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', color: '#888' }}>👁 View</button>
+        )}
+        {/* Edit + Delete for editable roles */}
+        {canEdit && (
+          <>
+            <button onClick={onEdit} style={{ background: '#f5f5f0', border: 'none', borderRadius: 8, padding: '7px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', color: '#444' }}>✏ Edit</button>
+            {!role.is_default && <button onClick={onDelete} style={{ background: '#fce4ec', border: 'none', borderRadius: 8, padding: '7px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', color: '#c62828' }}>🗑</button>}
+          </>
+        )}
+      </div>
     </div>
   )
 }
 
 // ─── Main TeamSettings Component ──────────────────────────────
-export default function TeamSettings({ workspace, currentUser, onClose }) {
+export default function TeamSettings({ workspace, currentUser, stages, onRefresh: onParentRefresh, onClose }) {
   const [tab, setTab]               = useState('members')
   const [members, setMembers]       = useState([])
   const [roles, setRoles]           = useState([])
@@ -233,7 +245,7 @@ export default function TeamSettings({ workspace, currentUser, onClose }) {
 
         {/* Tabs */}
         <div style={{ background: '#fff', borderBottom: '1px solid #e8e5e0', padding: '0 28px', display: 'flex', gap: 4 }}>
-          {[['members', '👥 Members'], ['roles', '🔑 Roles & Permissions']].map(([id, label]) => (
+          {[['members', '👥 Members'], ['roles', '🔑 Roles & Permissions'], ['stages', '⟶ Deal Stages']].map(([id, label]) => (
             <button key={id} onClick={() => setTab(id)} style={{ padding: '12px 16px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 700, fontFamily: 'inherit', color: tab === id ? '#ff7a59' : '#888', borderBottom: tab === id ? '2px solid #ff7a59' : '2px solid transparent', transition: 'all 0.15s' }}>{label}</button>
           ))}
         </div>
@@ -335,6 +347,7 @@ export default function TeamSettings({ workspace, currentUser, onClose }) {
                     permissions={permissions[role.id] || {}}
                     memberCount={members.filter(m => m.role_id === role.id).length}
                     canEdit={canManageRoles && !isLockedRole(role.name)}
+                    canView={isLockedRole(role.name)}
                     onEdit={() => setEditRole({ ...role, perms: { ...permissions[role.id] } })}
                     onDelete={() => deleteRole(role.id)}
                   />
@@ -342,34 +355,57 @@ export default function TeamSettings({ workspace, currentUser, onClose }) {
               </div>
             </div>
           )}
+        {/* ── STAGES TAB ── */}
+          {tab === 'stages' && (
+            <StageManager
+              workspace={workspace}
+              stages={stages || []}
+              canEdit={canManageRoles}
+              onRefresh={() => { fetchAll(); if(onParentRefresh) onParentRefresh() }}
+            />
+          )}
         </div>
       </div>
 
       {/* ── Edit Role Modal ── */}
       {editRole && (
-        <Modal title={`Edit: ${editRole.name}`} onClose={() => setEditRole(null)} width={720}>
+        <Modal title={`${isLockedRole(editRole.name) ? 'View' : 'Edit'}: ${editRole.name}`} onClose={() => setEditRole(null)} width={720} readOnly={isLockedRole(editRole.name)}>
           <div style={{ marginBottom: 16 }}>
             <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#888', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Description</label>
             <input
               value={editRole.description || ''}
               onChange={e => setEditRole(p => ({ ...p, description: e.target.value }))}
-              disabled={editRole.is_default}
+              disabled={editRole.is_default || isLockedRole(editRole.name)}
               style={{ width: '100%', border: '1px solid #e0ddd8', borderRadius: 8, padding: '9px 14px', fontSize: 13, fontFamily: 'inherit', background: editRole.is_default ? '#f5f5f0' : '#fff', outline: 'none' }}
             />
+          </div>
+          {/* Team resource explanation */}
+          <div style={{ background: '#fff8f0', border: '1px solid #ffe0cc', borderRadius: 10, padding: '10px 14px', marginBottom: 16, fontSize: 12, color: '#b85c00', lineHeight: 1.6 }}>
+            <strong>ℹ Team row explained:</strong> The "Team" resource controls administrative actions —
+            <strong> Invite</strong> = can add new members via slug ·
+            <strong> Remove</strong> = can remove members from the workspace ·
+            <strong> Manage Roles</strong> = can create/edit roles and change member roles.
+            These are not data records — they are workspace management capabilities.
           </div>
           <div style={{ marginBottom: 20 }}>
             <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#888', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Permissions</label>
             <PermissionMatrix
               permissions={editRole.perms || {}}
               onChange={(key, val) => setEditRole(p => ({ ...p, perms: { ...p.perms, [key]: val } }))}
-              disabled={false}
+              disabled={isLockedRole(editRole.name)}
             />
           </div>
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-            <button onClick={() => setEditRole(null)} style={{ background: 'transparent', border: '1px solid #e0ddd8', color: '#444', padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
-            <button disabled={saving} onClick={() => saveRolePermissions(editRole.id, editRole.perms || {})} style={{ background: '#ff7a59', color: '#fff', border: 'none', padding: '8px 18px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1, fontFamily: 'inherit' }}>
-              {saving ? 'Saving…' : 'Save Permissions'}
-            </button>
+            {isLockedRole(editRole.name) ? (
+              <button onClick={() => setEditRole(null)} style={{ background: '#f5f5f0', border: 'none', color: '#444', padding: '8px 20px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Close</button>
+            ) : (
+              <>
+                <button onClick={() => setEditRole(null)} style={{ background: 'transparent', border: '1px solid #e0ddd8', color: '#444', padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+                <button disabled={saving} onClick={() => saveRolePermissions(editRole.id, editRole.perms || {})} style={{ background: '#ff7a59', color: '#fff', border: 'none', padding: '8px 18px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1, fontFamily: 'inherit' }}>
+                  {saving ? 'Saving…' : 'Save Permissions'}
+                </button>
+              </>
+            )}
           </div>
         </Modal>
       )}

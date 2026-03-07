@@ -1,131 +1,215 @@
-# HubClone CRM — Supabase Setup Guide
+# HubClone CRM
 
-A full HubSpot-style CRM with a real PostgreSQL database hosted on Supabase.
-
----
-
-## 🚀 Setup in 5 Steps
-
-### Step 1 — Create a Supabase Project (free)
-
-1. Go to **https://supabase.com** → Sign up / Log in
-2. Click **"New Project"**
-3. Choose a name (e.g. `hubclone`) and a strong database password
-4. Pick a region close to you → **Create Project**
-5. Wait ~1 minute for the project to spin up
+A full HubSpot-style CRM built on **React + Supabase**. Multi-tenant workspaces, real-time data, and a complete Role-Based Access Control (RBAC) system.
 
 ---
 
-### Step 2 — Run the Database Schema
-
-1. In the Supabase dashboard, go to **SQL Editor** (left sidebar)
-2. Click **"New Query"**
-3. Open the file `supabase_schema.sql` from this project
-4. Copy the entire contents and paste into the SQL editor
-5. Click **"Run"** (or press Cmd/Ctrl+Enter)
-
-This creates 3 tables (`contacts`, `deals`, `activities`) and seeds them with sample data.
-
----
-
-### Step 3 — Get Your API Keys
-
-1. In Supabase dashboard, go to **Settings → API** (or **Project Settings → API**)
-2. Copy:
-   - **Project URL** — looks like `https://abcdefgh.supabase.co`
-   - **anon / public key** — a long JWT string
-
----
-
-### Step 4 — Add Your Keys to the App
-
-Open `src/supabaseClient.js` and replace the two placeholder values:
-
-```js
-const SUPABASE_URL  = 'https://YOUR_PROJECT_ID.supabase.co'   // ← your Project URL
-const SUPABASE_ANON = 'YOUR_ANON_PUBLIC_KEY'                   // ← your anon key
-```
-
-Save the file.
-
----
-
-### Step 5 — Run the App
-
-```bash
-# Install dependencies
-npm install
-
-# Start dev server
-npm start
-```
-
-Your browser will open at **http://localhost:3000** with a live CRM connected to your Supabase database.
-
----
-
-## ✅ Features
+## Features
 
 | Feature | Details |
 |---|---|
-| **Real Database** | PostgreSQL hosted on Supabase (free tier: 500MB) |
-| **Live Sync** | Supabase Realtime — changes appear instantly across tabs |
-| **Contacts** | Full CRUD — create, view, edit, delete with detail panel |
-| **Deals** | Pipeline tracking with probability, close date, value |
-| **Pipeline** | Kanban view by stage |
-| **Activities** | Log calls, emails, meetings, notes per contact |
-| **Dashboard** | Live metrics — pipeline value, win rate, revenue won |
-| **Search** | Filters contacts and deals in real time |
+| **Authentication** | Email/password sign up and login via Supabase Auth |
+| **Multi-tenant Workspaces** | Each company gets its own isolated workspace — data never crosses between workspaces |
+| **Contacts** | Full CRUD with detail panel, timeline, and search |
+| **Deals** | Pipeline tracking with probability, close date, and value |
+| **Pipeline** | Kanban board view by deal stage |
+| **Activities** | Log calls, emails, meetings, and notes per contact |
+| **Dashboard** | Live metrics — pipeline value, win rate, revenue won, open deals |
+| **Real-time Sync** | Supabase Realtime — changes appear instantly across tabs and users |
+| **RBAC** | 5 built-in roles + custom roles with a visual permission matrix editor |
+| **Team Settings** | Invite members, change roles, manage permissions — all in-app |
 
 ---
 
-## 📁 File Structure
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | React (react-scripts), plain CSS-in-JS |
+| Backend | Supabase (PostgreSQL + Auth + Realtime + RLS) |
+| Package manager | pnpm |
+| Permissions | Dynamic RLS policies + `usePermissions()` React hook |
+
+---
+
+## Quick Start
+
+### 1. Create a Supabase Project
+
+1. Go to [supabase.com](https://supabase.com) → New Project
+2. Choose a name, password, and region → Create
+3. Wait ~1 minute for the project to spin up
+
+### 2. Run the SQL files (in order)
+
+In Supabase Dashboard → **SQL Editor**, run each file in order:
+
+| # | File | What it does |
+|---|---|---|
+| 1 | `supabase_schema.sql` | Creates core tables: workspaces, workspace_members, contacts, deals, activities |
+| 2 | `rbac_schema.sql` | Creates roles and role_permissions tables, seeds 5 default roles per workspace |
+| 3 | `dynamic_rls.sql` | Creates `has_permission()` function and all dynamic RLS policies |
+
+> If you are setting up a fresh project, run all three. If upgrading an existing project, run only the files you have not run yet.
+
+### 3. Configure environment
+
+Copy `.env.example` to `.env` and fill in your Supabase credentials:
+
+```bash
+cp .env.example .env
+```
+
+```env
+REACT_APP_SUPABASE_URL=https://your-project-id.supabase.co
+REACT_APP_SUPABASE_ANON_KEY=your-anon-public-key
+```
+
+Find these in Supabase Dashboard → **Settings → API**.
+
+### 4. Install and run
+
+```bash
+pnpm install
+pnpm start
+```
+
+App runs at **http://localhost:3000**
+
+### 5. First-time setup in the app
+
+1. Click **Register** → create your account
+2. On the workspace setup screen, click **Create new workspace**
+3. Enter a name and slug (e.g. `acme`, `kiritra`) → you become the **Owner**
+4. The CRM loads scoped to your workspace
+
+To invite teammates: share your workspace slug. They register, choose **Join existing workspace**, and enter the slug. They join as **Viewer** by default — promote them in Team Settings.
+
+---
+
+## Project Structure
 
 ```
 hubclone/
-├── supabase_schema.sql     ← Run this in Supabase SQL Editor
+├── .env                      ← Your Supabase credentials (never commit this)
+├── .env.example              ← Template for .env
+├── .gitignore
 ├── package.json
+│
+├── supabase_schema.sql       ← Step 1: core tables + RLS setup
+├── rbac_schema.sql           ← Step 2: roles, permissions, default role seeding
+├── dynamic_rls.sql           ← Step 3: has_permission() + dynamic RLS policies
+│
+├── PERMISSIONS.md            ← Full RBAC documentation
+│
 ├── public/
 │   └── index.html
+│
 └── src/
     ├── index.js
-    ├── supabaseClient.js   ← Add your Supabase URL + key here
-    └── App.jsx             ← Full React app
+    ├── supabaseClient.js     ← Supabase client (reads from .env)
+    ├── permissions.js        ← RBAC config, constants, usePermissions() hook
+    ├── App.jsx               ← Main CRM app (auth-aware, workspace-scoped)
+    ├── Auth.jsx              ← Login, Register, WorkspaceSetup screens
+    └── TeamSettings.jsx      ← Team members + roles & permissions editor
 ```
 
 ---
 
-## 🌐 Deploy to Production (optional)
+## RBAC System
 
-To share your CRM publicly:
+HubClone has a full Role-Based Access Control system. See [PERMISSIONS.md](./PERMISSIONS.md) for complete documentation.
 
-```bash
-npm run build
+### Built-in Roles (quick reference)
+
+| Role | CRM Access | Team Access | Notes |
+|---|---|---|---|
+| **Owner** | Full | Full incl. manage roles | Locked — cannot be changed by anyone |
+| **Admin** | Full | Invite + remove members | Cannot manage roles |
+| **Sales Rep** | Own records + view all | None | Default for promoted members |
+| **Support Agent** | Contacts + activities only | None | No deal access |
+| **Viewer** | Read-only | None | **Default role on join** |
+
+### Changing permissions
+
+Owner and Admin can edit role permissions via the in-app UI:
+
+> **Sidebar → 👥 Team Settings → Roles & Permissions → ✏ Edit**
+
+Changes take effect immediately for all users with that role — no restart needed.
+
+### Custom roles
+
+Admins and Owners can create custom roles with any combination of permissions:
+
+> **Team Settings → Roles & Permissions → + New Role**
+
+---
+
+## Permission Architecture
+
+Permissions are enforced at two independent layers:
+
+```
+User action (e.g. delete a contact)
+        │
+        ▼
+┌───────────────────┐
+│   UI Layer        │  usePermissions() hook in permissions.js
+│   React / JS      │  → hides buttons the user cannot use
+│                   │  → loaded from DB on login
+└────────┬──────────┘
+         │ API call made if UI allows
+         ▼
+┌───────────────────┐
+│   DB Layer        │  has_permission() Postgres function
+│   Supabase RLS    │  → checks role_permissions table on every query
+│                   │  → blocks unauthorized requests even via curl/Postman
+└───────────────────┘
 ```
 
-Then deploy the `build/` folder to **Vercel**, **Netlify**, or any static host.
+The `role_permissions` table is the **single source of truth** — both layers read from it, so they are always in sync.
 
-For Vercel (easiest):
+---
+
+## Data Model
+
+```
+workspaces
+    └── workspace_members  (links users to workspaces, with role_id)
+    └── roles              (Owner, Admin, Sales Rep, Support Agent, Viewer + custom)
+         └── role_permissions  (resource + action pairs per role)
+    └── contacts           (workspace-scoped, with created_by)
+    └── deals              (workspace-scoped, with created_by)
+    └── activities         (workspace-scoped, linked to contacts)
+```
+
+All CRM data (contacts, deals, activities) is scoped to a workspace_id. Users from different workspaces never see each other's data.
+
+---
+
+## Deploy to Production
+
+```bash
+pnpm run build
+```
+
+Deploy the `build/` folder to **Vercel** (easiest):
+
 ```bash
 npx vercel --prod
 ```
 
----
-
-## 🔒 Add Authentication (optional)
-
-Supabase has built-in Auth. To restrict access:
-
-1. Enable auth in Supabase Dashboard → Authentication
-2. Uncomment the Row Level Security policies in `supabase_schema.sql`
-3. Add a login page using `supabase.auth.signInWithPassword()`
+Add your `REACT_APP_SUPABASE_URL` and `REACT_APP_SUPABASE_ANON_KEY` as environment variables in the Vercel dashboard.
 
 ---
 
 ## Troubleshooting
 
-**"Could not connect to Supabase"** → Double-check your URL and anon key in `supabaseClient.js`
-
-**"permission denied for table contacts"** → In Supabase → Table Editor → contacts → RLS is enabled but no policies exist. Either disable RLS or add a policy (see schema file comments).
-
-**Data not showing after schema run** → Make sure you ran the full SQL file including the `insert` statements at the bottom.
+| Error | Fix |
+|---|---|
+| `new row violates row-level security` | RLS is enabled but permissions are not seeded. Run `rbac_schema.sql` then: `select seed_default_roles(id) from workspaces where slug = 'your-slug';` |
+| `Workspace not found` on join | Run the `get_workspace_by_slug` function creation from `rls_fix_v2.sql` |
+| Blank role name in sidebar | Your member record has no `role_id`. Run the member migration SQL in `rbac_schema.sql` comments |
+| Buttons missing (no + Contact etc.) | Your role has no permissions yet. Go to Team Settings → Roles → edit your role |
+| `function not found` error | The `has_permission` or `create_workspace_with_owner` function was not created. Re-run the relevant SQL file |

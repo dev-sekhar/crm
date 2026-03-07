@@ -3,6 +3,8 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from './supabaseClient'
 import { Login, Register, WorkspaceSetup } from './Auth'
 import TeamSettings from './TeamSettings'
+import Pipeline from './Pipeline'
+import ActivityLog, { ActivityForm } from './ActivityLog'
 import { usePermissions, canAccessTeamSettings, isLockedRole } from './permissions'
 
 // ─── Constants ───────────────────────────────────────────────
@@ -88,9 +90,11 @@ const ContactForm = ({ initial, onSave, onClose, saving }) => {
 }
 
 // ─── Deal Form ────────────────────────────────────────────────
-const DealForm = ({ initial, contacts, onSave, onClose, saving }) => {
-  const [f,setF] = useState(initial || {name:'',contact_id:contacts[0]?.id||'',value:0,stage:'Discovery',probability:20,close_date:'',notes:''})
+const DealForm = ({ initial, contacts, stages, onSave, onClose, saving }) => {
+  const defaultStage = stages.find(s => s.is_default) || stages[0]
+  const [f,setF] = useState(initial || {name:'',contact_id:contacts[0]?.id||'',value:0,stage_id:defaultStage?.id||'',stage:defaultStage?.name||'',probability:20,close_date:'',notes:''})
   const set = k => e => setF(p=>({...p,[k]:e.target.value}))
+  const sortedStages = [...stages].sort((a,b) => a.position - b.position)
   return (
     <Modal title={initial?.id ? 'Edit Deal' : 'New Deal'} onClose={onClose}>
       <Field label="Deal Name"><Inp value={f.name} onChange={set('name')} placeholder="Enterprise License – Acme" /></Field>
@@ -105,39 +109,20 @@ const DealForm = ({ initial, contacts, onSave, onClose, saving }) => {
         <Field label="Probability (%)"><Inp type="number" min={0} max={100} value={f.probability} onChange={set('probability')} /></Field>
       </div>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
-        <Field label="Stage"><Sel value={f.stage} onChange={set('stage')}>{STAGE_COLS.map(s=><option key={s}>{s}</option>)}</Sel></Field>
+        <Field label="Stage">
+          <Sel value={f.stage_id || f.stage} onChange={e => {
+            const s = sortedStages.find(st => st.id === e.target.value)
+            setF(p => ({...p, stage_id: s?.id || '', stage: s?.name || e.target.value}))
+          }}>
+            {sortedStages.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </Sel>
+        </Field>
         <Field label="Close Date"><Inp type="date" value={f.close_date} onChange={set('close_date')} /></Field>
       </div>
       <Field label="Notes"><Tex value={f.notes} onChange={set('notes')} /></Field>
       <div style={{display:'flex',gap:10,justifyContent:'flex-end',marginTop:8}}>
         <button className="btn-ghost" onClick={onClose}>Cancel</button>
         <button className="btn-primary" disabled={saving||!f.name} onClick={()=>onSave(f)}>{saving?'Saving…':'Save Deal'}</button>
-      </div>
-    </Modal>
-  )
-}
-
-// ─── Activity Form ─────────────────────────────────────────────
-const ActivityForm = ({ contacts, onSave, onClose, saving }) => {
-  const [f,setF] = useState({type:'call',text:'',contact_id:contacts[0]?.id||''})
-  const set = k => e => setF(p=>({...p,[k]:e.target.value}))
-  return (
-    <Modal title="Log Activity" onClose={onClose} width={420}>
-      <div style={{display:'flex',gap:8,marginBottom:16,background:'#f5f5f0',borderRadius:8,padding:4}}>
-        {['call','email','meeting','note'].map(t=>(
-          <button key={t} onClick={()=>setF(p=>({...p,type:t}))} style={{flex:1,padding:'7px 0',border:'none',borderRadius:6,cursor:'pointer',fontSize:12,fontWeight:700,fontFamily:'inherit',background:f.type===t?'#fff':'transparent',color:f.type===t?'#1a1a1a':'#888',boxShadow:f.type===t?'0 1px 4px rgba(0,0,0,0.08)':'none'}}>{t.charAt(0).toUpperCase()+t.slice(1)}</button>
-        ))}
-      </div>
-      <Field label="Contact">
-        <Sel value={f.contact_id} onChange={set('contact_id')}>
-          <option value="">— No contact —</option>
-          {contacts.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
-        </Sel>
-      </Field>
-      <Field label="Description"><Tex value={f.text} onChange={set('text')} placeholder="Discussed renewal terms…" /></Field>
-      <div style={{display:'flex',gap:10,justifyContent:'flex-end',marginTop:8}}>
-        <button className="btn-ghost" onClick={onClose}>Cancel</button>
-        <button className="btn-primary" disabled={saving||!f.text} onClick={()=>onSave(f)}>{saving?'Saving…':'Log Activity'}</button>
       </div>
     </Modal>
   )
@@ -226,6 +211,7 @@ export default function App() {
   const [selected,   setSelected]   = useState(null)
   const [sidebar,    setSidebar]    = useState(true)
   const [toast,      setToast]      = useState(null)
+  const [stages,     setStages]     = useState([])
   const [dbError,    setDbError]    = useState(null)
   const [teamOpen,   setTeamOpen]   = useState(false)
 
@@ -262,14 +248,15 @@ export default function App() {
     if (!wsId) return
     setLoading(true)
     try {
-      const [{ data: c, error: ce }, { data: d, error: de }, { data: a, error: ae }] = await Promise.all([
+      const [{ data: c }, { data: d }, { data: st }, { data: a }] = await Promise.all([
         supabase.from('contacts').select('*').eq('workspace_id', wsId).order('created_at', { ascending: false }),
         supabase.from('deals').select('*').eq('workspace_id', wsId).order('created_at', { ascending: false }),
-        supabase.from('activities').select('*').eq('workspace_id', wsId).order('created_at', { ascending: false }),
+        supabase.from('deal_stages').select('*').eq('workspace_id', wsId).order('position'),
+        supabase.from('activities').select('*').eq('workspace_id', wsId).order('activity_at', { ascending: false }),
       ])
-      if (ce || de || ae) throw ce || de || ae
       setContacts(c || [])
       setDeals(d || [])
+      setStages(st || [])
       setActivities(a || [])
     } catch (err) {
       setDbError(err.message)
@@ -344,7 +331,20 @@ export default function App() {
   // ── CRUD: Activities ────────────────────────────────────────
   const saveActivity = async (data) => {
     setSaving(true)
-    const { error } = await supabase.from('activities').insert({ ...data, contact_id: data.contact_id || null, workspace_id: workspace.id, created_by: user.id })
+    const payload = {
+      workspace_id:     workspace.id,
+      created_by:       user.id,
+      type:             data.type,
+      text:             data.text,
+      contact_id:       data.contact_id || null,
+      activity_at:      data.activity_at || new Date().toISOString(),
+      duration_mins:    data.duration_mins ? parseInt(data.duration_mins) : null,
+      notes:            data.notes || null,
+      follow_up_action: data.follow_up_action || null,
+      follow_up_date:   data.follow_up_date || null,
+      follow_up_done:   false,
+    }
+    const { error } = await supabase.from('activities').insert(payload)
     setSaving(false)
     if (error) return showToast('Error: ' + error.message)
     await fetchAll(workspace.id)
@@ -606,93 +606,35 @@ export default function App() {
 
           {/* ── PIPELINE ── */}
           {nav==='pipeline' && (
-            <div style={{animation:'fadeUp 0.3s ease'}}>
-              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20}}>
-                <h1 style={{fontFamily:'Syne,sans-serif',fontWeight:800,fontSize:24}}>Pipeline</h1>
-                <button className="btn-primary" onClick={()=>{setEditTarget(null);setModal('deal')}}>+ New Deal</button>
-              </div>
-              <div style={{display:'flex',gap:16,overflowX:'auto',paddingBottom:16}}>
-                {STAGE_COLS.map(stage=>{
-                  const sd=deals.filter(d=>d.stage===stage)
-                  const total=sd.reduce((s,d)=>s+Number(d.value),0)
-                  return (
-                    <div key={stage} style={{minWidth:240,flex:'0 0 240px'}}>
-                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
-                        <span style={{fontWeight:700,fontSize:13,color:'#444'}}>{stage}</span>
-                        <span style={{background:'#f0ede8',borderRadius:20,padding:'2px 8px',fontSize:11,fontWeight:700,color:'#888'}}>{sd.length}</span>
-                      </div>
-                      {total>0 && <div style={{fontSize:12,color:'#ff7a59',fontWeight:700,marginBottom:10}}>{fmt$(total)}</div>}
-                      {sd.map(d=>{
-                        const c=contacts.find(x=>x.id===d.contact_id)
-                        return (
-                          <div key={d.id} style={{background:'#fff',border:'1px solid #e8e5e0',borderRadius:10,padding:14,marginBottom:10,cursor:'pointer',transition:'box-shadow 0.15s'}}
-                            onMouseEnter={e=>e.currentTarget.style.boxShadow='0 4px 12px rgba(0,0,0,0.07)'}
-                            onMouseLeave={e=>e.currentTarget.style.boxShadow='none'}>
-                            <div style={{fontWeight:600,fontSize:13,marginBottom:4}}>{d.name}</div>
-                            <div style={{fontSize:12,color:'#888',marginBottom:8}}>{c?.name||'—'}</div>
-                            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                              <span style={{fontFamily:'Syne,sans-serif',fontWeight:800,fontSize:15,color:'#ff7a59'}}>{fmt$(d.value)}</span>
-                              <span style={{fontSize:11,color:'#aaa'}}>{d.close_date||''}</span>
-                            </div>
-                            <div className="progress-bar"><div className="progress-fill" style={{width:`${d.probability}%`}}/></div>
-                          </div>
-                        )
-                      })}
-                      {sd.length===0 && <div style={{border:'2px dashed #e8e5e0',borderRadius:10,padding:24,textAlign:'center',color:'#ccc',fontSize:13}}>Empty</div>}
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
+            <Pipeline
+              deals={deals}
+              stages={stages}
+              contacts={contacts}
+              activities={activities}
+              userCan={userCan}
+              onNewDeal={() => { setEditTarget(null); setModal('deal') }}
+              onEditDeal={d => { setEditTarget(d); setModal('deal') }}
+              onRefresh={() => fetchAll(workspace.id)}
+            />
           )}
 
           {/* ── ACTIVITY ── */}
           {nav==='activity' && (
-            <div style={{animation:'fadeUp 0.3s ease'}}>
-              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20}}>
-                <h1 style={{fontFamily:'Syne,sans-serif',fontWeight:800,fontSize:24}}>Activity</h1>
-                <button className="btn-primary" onClick={()=>setModal('activity')}>⚡ Log Activity</button>
-              </div>
-              <div style={{display:'grid',gridTemplateColumns:'1fr 280px',gap:20}}>
-                <div className="card" style={{padding:24}}>
-                  {activities.length===0 && <div style={{textAlign:'center',color:'#ccc',padding:40}}>No activities yet.</div>}
-                  {activities.map((a,i)=>{
-                    const c=contacts.find(x=>x.id===a.contact_id)
-                    return (
-                      <div key={a.id} style={{display:'flex',gap:16,paddingBottom:20}}>
-                        <div style={{display:'flex',flexDirection:'column',alignItems:'center'}}>
-                          <div style={{width:40,height:40,borderRadius:10,background:'#fff8f6',border:'1px solid #fce0d8',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>{ACT_ICONS[a.type]||'⚡'}</div>
-                          {i<activities.length-1 && <div style={{width:2,flex:1,background:'#f0ede8',marginTop:8}}/>}
-                        </div>
-                        <div style={{paddingTop:8}}>
-                          <div style={{fontWeight:600,fontSize:14}}>{a.text}</div>
-                          {c && <div style={{fontSize:12,color:'#888',marginTop:2}}>{c.name} · {c.company}</div>}
-                          <div style={{fontSize:11,color:'#aaa',marginTop:4}}>{timeAgo(a.created_at)}</div>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-                <div className="card" style={{padding:20,alignSelf:'start'}}>
-                  <h3 style={{fontWeight:700,fontSize:14,marginBottom:14}}>Stats</h3>
-                  {['call','email','meeting','note'].map(t=>(
-                    <div key={t} style={{display:'flex',justifyContent:'space-between',padding:'8px 0',borderBottom:'1px solid #f5f5f0'}}>
-                      <span style={{fontSize:13,color:'#666'}}>{ACT_ICONS[t]} {t.charAt(0).toUpperCase()+t.slice(1)}s</span>
-                      <span style={{fontWeight:700,fontSize:13}}>{activities.filter(a=>a.type===t).length}</span>
-                    </div>
-                  ))}
-                  <button className="btn-primary" style={{width:'100%',marginTop:16,padding:'10px 18px'}} onClick={()=>setModal('activity')}>⚡ Log Activity</button>
-                </div>
-              </div>
-            </div>
+            <ActivityLog
+              activities={activities}
+              contacts={contacts}
+              userCan={userCan}
+              onLogActivity={() => setModal('activity')}
+              onRefresh={() => fetchAll(workspace.id)}
+            />
           )}
         </div>
       </div>
 
       {/* Modals */}
       {modal==='contact' && <ContactForm onSave={saveContact} onClose={()=>setModal(null)} saving={saving}/>}
-      {modal==='deal'    && <DealForm initial={editTarget} contacts={contacts} onSave={saveDeal} onClose={()=>{setModal(null);setEditTarget(null)}} saving={saving}/>}
-      {modal==='activity'&& <ActivityForm contacts={contacts} onSave={saveActivity} onClose={()=>setModal(null)} saving={saving}/>}
+      {modal==='deal'    && <DealForm initial={editTarget} contacts={contacts} stages={stages} onSave={saveDeal} onClose={()=>{setModal(null);setEditTarget(null)}} saving={saving}/>}
+      {modal==='activity' && <ActivityForm contacts={contacts} onSave={saveActivity} onClose={()=>setModal(null)} saving={saving}/>}
       {modal==='contact' && editTarget && <ContactForm initial={editTarget} onSave={saveContact} onClose={()=>{setModal(null);setEditTarget(null)}} saving={saving}/>}
 
       {selected && (
@@ -704,7 +646,7 @@ export default function App() {
         />
       )}
 
-      {teamOpen && <TeamSettings workspace={workspace} currentUser={user} onClose={()=>setTeamOpen(false)} />}
+      {teamOpen && <TeamSettings workspace={workspace} currentUser={user} stages={stages} onRefresh={()=>fetchAll(workspace.id)} onClose={()=>setTeamOpen(false)} />}
       <Toast msg={toast}/>
     </div>
   )
