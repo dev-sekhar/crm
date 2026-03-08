@@ -69,7 +69,7 @@ export function Login({ onSwitch }) {
   }
 
   return (
-    <Card title="Welcome back" subtitle="Sign in to your HubClone workspace">
+    <Card title="Welcome back" subtitle="Sign in to your HelixCRM workspace">
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Syne:wght@800&family=DM+Sans:wght@400;500;700&display=swap')`}</style>
       <Error msg={error} />
       <Field label={t('auth.email')}><Inp type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@company.com" onKeyDown={e => e.key === 'Enter' && handle()} /></Field>
@@ -211,7 +211,7 @@ export function WorkspaceSetup({ user, onDone }) {
         </Field>
         <Field label="Workspace Slug">
           <div style={{ position: 'relative' }}>
-            <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 13, color: '#aaa', pointerEvents: 'none' }}>hubclone.app/</span>
+            <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 13, color: '#aaa', pointerEvents: 'none' }}>helixcrm.app/</span>
             <Inp value={form.slug} onChange={set('slug')} placeholder="acme-corp" style={{ paddingLeft: 108 }} />
           </div>
           <p style={{ fontSize: 11, color: '#aaa', marginTop: 4 }}>Share this slug with teammates so they can join your workspace.</p>

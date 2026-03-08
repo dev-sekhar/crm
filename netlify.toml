@@ -1,0 +1,12 @@
+[build]
+  command   = "npm run build"
+  publish   = "build"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# React Router: send all routes to index.html so client-side routing works
+[[redirects]]
+  from   = "/*"
+  to     = "/index.html"
+  status = 200

@@ -439,7 +439,7 @@ export default function App() {
           <div style={{width:34,height:34,background:'#ff7a59',borderRadius:8,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
             <span style={{color:'#fff',fontFamily:'Syne,sans-serif',fontWeight:800,fontSize:14}}>H</span>
           </div>
-          {sidebar && <span style={{fontFamily:'Syne,sans-serif',fontWeight:800,fontSize:16,color:'#1a1a1a',whiteSpace:'nowrap'}}>HubClone</span>}
+          {sidebar && <span style={{fontFamily:'Syne,sans-serif',fontWeight:800,fontSize:16,color:'#1a1a1a',whiteSpace:'nowrap'}}>HelixCRM</span>}
         </div>
         <div style={{flex:1,padding:'12px 8px',display:'flex',flexDirection:'column',gap:2}}>
           {navItems.map(item=>(

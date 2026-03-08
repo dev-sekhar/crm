@@ -1,4 +1,4 @@
-# HubClone CRM
+# HelixCRM
 
 A full-stack HubSpot-style CRM built with React + Supabase. Multi-tenant, role-based, fully internationalised.
 
@@ -6,7 +6,7 @@ A full-stack HubSpot-style CRM built with React + Supabase. Multi-tenant, role-b
 
 - **Frontend**: React 18 (react-scripts 5), inline styles, no CSS framework
 - **Backend**: Supabase (PostgreSQL + Auth + Realtime)
-- **Package manager**: pnpm
+- **Package manager**: npm
 
 ---
 
@@ -51,8 +51,8 @@ REACT_APP_SUPABASE_ANON_KEY=eyJ...
 ### 3. Install & run
 
 ```bash
-pnpm install
-pnpm start
+npm install
+npm start
 # → http://localhost:3000
 ```
 
@@ -122,7 +122,7 @@ To add a new language:
 ## Project Structure
 
 ```
-hubclone/
+helixcrm/
 ├── schema/                     # SQL migrations (run in order)
 │   ├── 01_core_schema.sql
 │   ├── 02_rbac_schema.sql

@@ -608,12 +608,12 @@ export const I18nContext = createContext(null)
 
 // ─── Provider ─────────────────────────────────────────────────
 export function I18nProvider({ children }) {
-  const saved = localStorage.getItem('hubclone_lang') || 'en'
+  const saved = localStorage.getItem('helixcrm_lang') || 'en'
   const [lang, setLangState] = useState(saved)
 
   const setLang = useCallback((code) => {
     setLangState(code)
-    localStorage.setItem('hubclone_lang', code)
+    localStorage.setItem('helixcrm_lang', code)
     // RTL support
     const isRtl = LANGUAGES.find(l => l.code === code)?.rtl
     document.documentElement.setAttribute('dir', isRtl ? 'rtl' : 'ltr')
