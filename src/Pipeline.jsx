@@ -1,15 +1,18 @@
 // src/Pipeline.jsx
 // Kanban pipeline with drag-and-drop, deal detail modal, stage legend
-import { useState, useRef } from 'react'
+import { useState } from 'react'
 import { supabase } from './supabaseClient'
+import { StageChangeModal } from './ActivityLog'
 
 const fmt$ = v => '$' + Number(v||0).toLocaleString()
 const timeAgo = d => { if(!d) return ''; const s=Math.floor((Date.now()-new Date(d))/1000); if(s<60) return 'just now'; if(s<3600) return Math.floor(s/60)+'m ago'; if(s<86400) return Math.floor(s/3600)+'h ago'; return Math.floor(s/86400)+'d ago' }
 
 // ─── Deal Detail Modal ────────────────────────────────────────
 const DealModal = ({ deal, contact, stage, stages, activities, onClose, onEdit, onStageChange }) => {
-  const dealActivities = activities.filter(a => a.deal_id === deal.id || a.contact_id === deal.contact_id)
-  const ACT_ICONS = { call:'📞', email:'✉️', meeting:'🗓', note:'📝' }
+  const dealActivities = activities
+    .filter(a => a.deal_id === deal.id || a.contact_id === deal.contact_id)
+    .sort((a,b) => new Date(b.activity_at || b.created_at) - new Date(a.activity_at || a.created_at))
+  const ACT_ICONS = { call:'📞', email:'✉️', meeting:'🗓', note:'📝', stage_change:'🔄', task:'✅' }
 
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:400 }}>
@@ -91,7 +94,30 @@ const DealModal = ({ deal, contact, stage, stages, activities, onClose, onEdit, 
                   </div>
                   <div style={{ paddingTop:4, flex:1 }}>
                     <div style={{ fontWeight:600, fontSize:13 }}>{a.text}</div>
-                    {a.notes && <div style={{ fontSize:12, color:'#666', marginTop:3, lineHeight:1.5 }}>{a.notes}</div>}
+
+                    {/* Stage change: show from→to and comment */}
+                    {a.type === 'stage_change' && (() => {
+                      try {
+                        const d = JSON.parse(a.notes || '{}')
+                        return (
+                          <div>
+                            <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:4 }}>
+                              <span style={{ background:'#f5f5f0', padding:'2px 8px', borderRadius:10, fontSize:11, color:'#666' }}>{d.from}</span>
+                              <span style={{ color:'#ccc' }}>→</span>
+                              <span style={{ background:'#fff3e0', padding:'2px 8px', borderRadius:10, fontSize:11, fontWeight:700, color:'#ff7a59' }}>{d.to}</span>
+                            </div>
+                            {d.comment && <div style={{ fontSize:12, color:'#555', marginTop:5, background:'#f9f8f6', padding:'6px 10px', borderRadius:8, lineHeight:1.5 }}>{d.comment}</div>}
+                          </div>
+                        )
+                      } catch(e) { return null }
+                    })()}
+
+                    {/* Regular notes */}
+                    {a.type !== 'stage_change' && a.notes && (
+                      <div style={{ fontSize:12, color:'#666', marginTop:3, lineHeight:1.5, background:'#f9f8f6', padding:'6px 10px', borderRadius:8 }}>{a.notes}</div>
+                    )}
+
+                    {/* Follow-up */}
                     {a.follow_up_action && (
                       <div style={{ marginTop:6, background: a.follow_up_done ? '#e8f5e9' : (a.follow_up_date && new Date(a.follow_up_date) < new Date() ? '#fce4ec' : '#fff8f0'),
                         border: `1px solid ${a.follow_up_done ? '#c8e6c9' : (a.follow_up_date && new Date(a.follow_up_date) < new Date() ? '#f8bbd0' : '#ffe0b2')}`,
@@ -144,10 +170,12 @@ const StageLegend = ({ stages }) => (
 )
 
 // ─── Main Pipeline Component ──────────────────────────────────
-export default function Pipeline({ deals, stages, contacts, activities, userCan, onNewDeal, onEditDeal, onRefresh }) {
-  const [dragDeal,    setDragDeal]    = useState(null)
-  const [dragOver,    setDragOver]    = useState(null)
-  const [selectedDeal, setSelectedDeal] = useState(null)
+export default function Pipeline({ deals, stages, contacts, activities, userCan, user, onNewDeal, onEditDeal, onRefresh }) {
+  const [dragDeal,      setDragDeal]      = useState(null)
+  const [dragOver,      setDragOver]      = useState(null)
+  const [selectedDeal,  setSelectedDeal]  = useState(null)
+  const [stageChange,   setStageChange]   = useState(null) // { deal, fromStage, toStage }
+  const [changeSaving,  setChangeSaving]  = useState(false)
 
   const handleDragStart = (e, deal) => {
     setDragDeal(deal)
@@ -160,18 +188,44 @@ export default function Pipeline({ deals, stages, contacts, activities, userCan,
     setDragOver(stageId)
   }
 
-  const handleDrop = async (e, stage) => {
+  const handleDrop = (e, stage) => {
     e.preventDefault()
     setDragOver(null)
     if (!dragDeal || dragDeal.stage_id === stage.id) { setDragDeal(null); return }
-    await supabase.from('deals').update({ stage_id: stage.id, stage: stage.name }).eq('id', dragDeal.id)
+    const fromStage = stages.find(s => s.id === dragDeal.stage_id)
+    setStageChange({ deal: dragDeal, fromStage, toStage: stage })
     setDragDeal(null)
-    onRefresh()
   }
 
-  const handleStageChange = async (dealId, stageId, stageName) => {
-    await supabase.from('deals').update({ stage_id: stageId, stage: stageName }).eq('id', dealId)
-    if (selectedDeal?.id === dealId) setSelectedDeal(d => ({ ...d, stage_id: stageId, stage: stageName }))
+  const handleStageChange = (dealId, stageId, stageName) => {
+    const deal = deals.find(d => d.id === dealId)
+    const fromStage = stages.find(s => s.id === deal?.stage_id)
+    const toStage = stages.find(s => s.id === stageId)
+    if (deal && fromStage?.id !== toStage?.id) {
+      setStageChange({ deal, fromStage, toStage })
+      if (selectedDeal?.id === dealId) setSelectedDeal(null)
+    }
+  }
+
+  const confirmStageChange = async (notes) => {
+    if (!stageChange) return
+    setChangeSaving(true)
+    const { deal, fromStage, toStage } = stageChange
+    // Update the deal stage
+    await supabase.from('deals').update({ stage_id: toStage.id, stage: toStage.name }).eq('id', deal.id)
+    // Create a stage_change activity linked to the deal
+    await supabase.from('activities').insert({
+      workspace_id: deal.workspace_id,
+      deal_id:      deal.id,
+      contact_id:   deal.contact_id || null,
+      created_by:   user?.id,
+      type:         'stage_change',
+      text:         `Stage changed: ${fromStage?.name} → ${toStage?.name}`,
+      notes:        JSON.stringify({ from: fromStage?.name, to: toStage?.name, comment: notes }),
+      activity_at:  new Date().toISOString(),
+    })
+    setChangeSaving(false)
+    setStageChange(null)
     onRefresh()
   }
 
@@ -251,6 +305,18 @@ export default function Pipeline({ deals, stages, contacts, activities, userCan,
 
       {/* Stage legend */}
       <StageLegend stages={sortedStages} />
+
+      {/* Stage change note modal */}
+      {stageChange && (
+        <StageChangeModal
+          deal={stageChange.deal}
+          fromStage={stageChange.fromStage}
+          toStage={stageChange.toStage}
+          saving={changeSaving}
+          onConfirm={confirmStageChange}
+          onCancel={() => { setStageChange(null); setDragDeal(null) }}
+        />
+      )}
 
       {/* Deal detail modal */}
       {selectedDeal && (

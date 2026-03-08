@@ -6,6 +6,7 @@ import TeamSettings from './TeamSettings'
 import Pipeline from './Pipeline'
 import ActivityLog, { ActivityForm } from './ActivityLog'
 import { usePermissions, canAccessTeamSettings, isLockedRole } from './permissions'
+import { useTranslation, LANGUAGES } from './i18n'
 
 // ─── Constants ───────────────────────────────────────────────
 const STAGE_COLS   = ['Discovery','Qualified','Proposal','Negotiation','Closed Won']
@@ -54,8 +55,8 @@ const Spinner = () => (
 
 // ─── Modal Shell ─────────────────────────────────────────────
 const Modal = ({ title, onClose, children, width=480 }) => (
-  <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.35)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200}}>
-    <div onClick={e=>e.stopPropagation()} style={{background:'#fff',borderRadius:16,width,maxHeight:'90vh',overflowY:'auto',boxShadow:'0 20px 60px rgba(0,0,0,0.18)',animation:'popIn 0.18s ease'}}>
+  <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.35)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200}}>
+    <div style={{background:'#fff',borderRadius:16,width,maxHeight:'90vh',overflowY:'auto',boxShadow:'0 20px 60px rgba(0,0,0,0.18)',animation:'popIn 0.18s ease'}}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'20px 24px',borderBottom:'1px solid #f0ede8'}}>
         <span style={{fontFamily:'Syne,sans-serif',fontWeight:800,fontSize:18}}>{title}</span>
         <button onClick={onClose} style={{background:'none',border:'none',fontSize:20,cursor:'pointer',color:'#aaa'}}>✕</button>
@@ -133,7 +134,7 @@ const ContactPanel = ({ contact, deals, activities, onEdit, onDelete, onClose })
   const cDeals = deals.filter(d=>d.contact_id===contact.id)
   const cActs  = [...activities.filter(a=>a.contact_id===contact.id)].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at))
   return (
-    <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.25)',zIndex:150,display:'flex',justifyContent:'flex-end'}}>
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.25)',zIndex:150,display:'flex',justifyContent:'flex-end'}}>
       <div onClick={e=>e.stopPropagation()} style={{width:420,background:'#fff',height:'100vh',overflowY:'auto',borderLeft:'1px solid #e8e5e0',animation:'slideIn 0.2s ease'}}>
         <div style={{padding:24,borderBottom:'1px solid #f0ede8'}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
@@ -192,6 +193,9 @@ const ContactPanel = ({ contact, deals, activities, onEdit, onDelete, onClose })
 
 // ─── Main App ─────────────────────────────────────────────────
 export default function App() {
+  const { t, lang, setLang, LANGUAGES } = useTranslation()
+  const [langOpen, setLangOpen] = useState(false)
+
   // ── Auth + Workspace state ─────────────────────────────────
   const [authScreen,  setAuthScreen]  = useState('login')   // 'login' | 'register'
   const [user,        setUser]        = useState(null)
@@ -214,6 +218,7 @@ export default function App() {
   const [stages,     setStages]     = useState([])
   const [dbError,    setDbError]    = useState(null)
   const [teamOpen,   setTeamOpen]   = useState(false)
+  const [followUpParent, setFollowUpParent] = useState(null) // activity that triggered a follow-up log
 
   const showToast = msg => { setToast(msg); setTimeout(()=>setToast(null),2600) }
 
@@ -282,7 +287,10 @@ export default function App() {
     const actSub = supabase.channel('activities-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'activities' }, () => fetchAll(workspace.id))
       .subscribe()
-    return () => { contactSub.unsubscribe(); dealSub.unsubscribe(); actSub.unsubscribe() }
+    const stageSub = supabase.channel('stages-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'deal_stages' }, () => fetchAll(workspace.id))
+      .subscribe()
+    return () => { contactSub.unsubscribe(); dealSub.unsubscribe(); actSub.unsubscribe(); stageSub.unsubscribe() }
   }, [workspace, fetchAll])
 
   // ── CRUD: Contacts ─────────────────────────────────────────
@@ -304,7 +312,7 @@ export default function App() {
     if (error) return showToast('Error: ' + error.message)
     await fetchAll(workspace.id)
     setSelected(null)
-    showToast('Contact deleted')
+    showToast(t('contacts.deleted'))
   }
 
   // ── CRUD: Deals ────────────────────────────────────────────
@@ -325,31 +333,39 @@ export default function App() {
     const { error } = await supabase.from('deals').delete().eq('id', id)
     if (error) return showToast('Error: ' + error.message)
     await fetchAll(workspace.id)
-    showToast('Deal deleted')
+    showToast(t('deals.deleted'))
   }
 
   // ── CRUD: Activities ────────────────────────────────────────
   const saveActivity = async (data) => {
     setSaving(true)
     const payload = {
-      workspace_id:     workspace.id,
-      created_by:       user.id,
-      type:             data.type,
-      text:             data.text,
-      contact_id:       data.contact_id || null,
-      activity_at:      data.activity_at || new Date().toISOString(),
-      duration_mins:    data.duration_mins ? parseInt(data.duration_mins) : null,
-      notes:            data.notes || null,
-      follow_up_action: data.follow_up_action || null,
-      follow_up_date:   data.follow_up_date || null,
-      follow_up_done:   false,
+      workspace_id:      workspace.id,
+      created_by:        user.id,
+      type:              data.type,
+      text:              data.text,
+      contact_id:        data.contact_id || null,
+      deal_id:           data.deal_id || null,
+      activity_at:       data.activity_at || new Date().toISOString(),
+      duration_mins:     data.duration_mins ? parseInt(data.duration_mins) : null,
+      notes:             data.notes || null,
+      follow_up_action:  data.follow_up_action || null,
+      follow_up_date:    data.follow_up_date || null,
+      follow_up_done:    false,
+      // Link to parent activity if this is a follow-up
+      parent_activity_id: followUpParent?.id || null,
     }
     const { error } = await supabase.from('activities').insert(payload)
+    if (error) { setSaving(false); return showToast('Error: ' + error.message) }
+    // If this was a follow-up, mark the parent as done
+    if (followUpParent?.id) {
+      await supabase.from('activities').update({ follow_up_done: true }).eq('id', followUpParent.id)
+    }
     setSaving(false)
-    if (error) return showToast('Error: ' + error.message)
-    await fetchAll(workspace.id)
     setModal(null)
-    showToast('Activity logged ✓')
+    setFollowUpParent(null)
+    await fetchAll(workspace.id)
+    showToast(t('actForm.title') + ' ✓')
   }
 
   // ── Auth gates ─────────────────────────────────────────────
@@ -373,11 +389,11 @@ export default function App() {
   const filtDeals = deals.filter(d => d.name.toLowerCase().includes(search.toLowerCase()))
 
   const navItems = [
-    { id:'dashboard', label:'Dashboard', icon:'◈' },
-    { id:'contacts',  label:'Contacts',  icon:'👤' },
-    { id:'deals',     label:'Deals',     icon:'💼' },
-    { id:'pipeline',  label:'Pipeline',  icon:'⟶' },
-    { id:'activity',  label:'Activity',  icon:'⚡' },
+    { id:'dashboard', label: t('nav.dashboard'), icon:'◈' },
+    { id:'contacts',  label: t('nav.contacts'),  icon:'👤' },
+    { id:'deals',     label: t('nav.deals'),     icon:'💼' },
+    { id:'pipeline',  label: t('nav.pipeline'),  icon:'⟶' },
+    { id:'activity',  label: t('nav.activity'),  icon:'⚡' },
   ]
 
   if (loading) return <Spinner />
@@ -443,16 +459,41 @@ export default function App() {
           {canAccessTeamSettings(userRoleName) && (
             <button className="nav-item" onClick={()=>setTeamOpen(true)}>
               <span style={{fontSize:14}}>👥</span>
-              {sidebar && <span>Team Settings</span>}
+              {sidebar && <span>{t('nav.team')}</span>}
             </button>
           )}
+
+          {/* Language picker */}
+          <div style={{position:'relative'}}>
+            <button className="nav-item" onClick={()=>setLangOpen(o=>!o)}>
+              <span style={{fontSize:14}}>{LANGUAGES.find(l=>l.code===lang)?.flag || '🌐'}</span>
+              {sidebar && <span style={{fontSize:12}}>{LANGUAGES.find(l=>l.code===lang)?.label || 'Language'}</span>}
+            </button>
+            {langOpen && (
+              <div style={{position:'absolute',bottom:'100%',left:0,background:'#fff',border:'1px solid #e8e5e0',borderRadius:10,boxShadow:'0 8px 24px rgba(0,0,0,0.12)',zIndex:999,minWidth:180,padding:6}}>
+                {LANGUAGES.map(lng => (
+                  <button key={lng.code} onClick={()=>{ setLang(lng.code); setLangOpen(false) }}
+                    style={{display:'flex',alignItems:'center',gap:8,width:'100%',padding:'7px 12px',border:'none',
+                      background: lang===lng.code ? '#fff3f0' : 'transparent',
+                      borderRadius:7,cursor:'pointer',fontFamily:'inherit',fontSize:13,
+                      color: lang===lng.code ? '#ff7a59' : '#444',
+                      fontWeight: lang===lng.code ? 700 : 400}}>
+                    <span>{lng.flag}</span>
+                    <span>{lng.label}</span>
+                    {lang===lng.code && <span style={{marginLeft:'auto',color:'#ff7a59'}}>✓</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
           <button className="nav-item" onClick={()=>supabase.auth.signOut()} style={{color:'#c62828'}}>
             <span style={{fontSize:14}}>↪</span>
-            {sidebar && <span>Sign Out</span>}
+            {sidebar && <span>{t('nav.signOut')}</span>}
           </button>
           <button className="nav-item" onClick={()=>setSidebar(o=>!o)}>
             <span style={{fontSize:14}}>{sidebar?'◂':'▸'}</span>
-            {sidebar && <span>Collapse</span>}
+            {sidebar && <span>{t('common.close')}</span>}
           </button>
         </div>
       </div>
@@ -464,7 +505,7 @@ export default function App() {
           <input className="inp" placeholder="🔍  Search…" style={{maxWidth:360}} value={search} onChange={e=>setSearch(e.target.value)}/>
           <div style={{flex:1}}/>
           {userCan('activities','create') && <button className="btn-ghost" style={{fontSize:12}} onClick={()=>setModal('activity')}>⚡ Log</button>}
-          {userCan('deals','create') && <button className="btn-ghost" style={{fontSize:12}} onClick={()=>{setEditTarget(null);setModal('deal')}}>+ Deal</button>}
+          {userCan('deals','create') && <button className="btn-ghost" style={{fontSize:12}} onClick={()=>{setEditTarget(null);setModal('deal')}}>{t('deals.new')}</button>}
           {userCan('contacts','create') && <button className="btn-primary" onClick={()=>{setEditTarget(null);setModal('contact')}}>+ Contact</button>}
         </div>
 
@@ -475,15 +516,15 @@ export default function App() {
           {nav==='dashboard' && (
             <div style={{animation:'fadeUp 0.3s ease'}}>
               <div style={{marginBottom:24}}>
-                <h1 style={{fontFamily:'Syne,sans-serif',fontWeight:800,fontSize:26,color:'#1a1a1a'}}>Dashboard</h1>
+                <h1 style={{fontFamily:'Syne,sans-serif',fontWeight:800,fontSize:26,color:'#1a1a1a'}}>{t('nav.dashboard')}</h1>
                 <p style={{color:'#888',fontSize:14,marginTop:4}}>Live data from your Supabase database.</p>
               </div>
               <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:16,marginBottom:24}}>
                 {[
-                  {label:'Total Pipeline', value:fmt$(pipeline), sub:`${deals.length} deals`},
-                  {label:'Revenue Won',    value:fmt$(won),      sub:'Closed deals'},
-                  {label:'Open Deals',     value:openDeals,      sub:'Active'},
-                  {label:'Win Rate',       value:winRate+'%',    sub:'All time'},
+                  {label:t('dash.pipeline'), value:fmt$(pipeline), sub:t('dash.deals',{count:deals.length})},
+                  {label:t('dash.won'),      value:fmt$(won),      sub:t('dash.closedDeals')},
+                  {label:t('dash.openDeals'),value:openDeals,      sub:t('dash.active')},
+                  {label:t('dash.winRate'),  value:winRate+'%',    sub:'All time'},
                 ].map(m=>(
                   <div key={m.label} className="card" style={{padding:20}}>
                     <div style={{fontSize:12,color:'#888',fontWeight:500,marginBottom:6}}>{m.label}</div>
@@ -495,8 +536,8 @@ export default function App() {
               <div style={{display:'grid',gridTemplateColumns:'1.4fr 1fr',gap:20}}>
                 <div className="card" style={{padding:20}}>
                   <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
-                    <h3 style={{fontWeight:700,fontSize:15}}>Recent Deals</h3>
-                    <button className="btn-ghost" style={{fontSize:12}} onClick={()=>setNav('deals')}>View all →</button>
+                    <h3 style={{fontWeight:700,fontSize:15}}>{t('dash.recentDeals')}</h3>
+                    <button className="btn-ghost" style={{fontSize:12}} onClick={()=>setNav('deals')}>{t('dash.viewAll')}</button>
                   </div>
                   {deals.slice(0,5).map(d=>{
                     const c=contacts.find(x=>x.id===d.contact_id)
@@ -513,17 +554,17 @@ export default function App() {
                       </div>
                     )
                   })}
-                  {deals.length===0 && <div style={{textAlign:'center',color:'#ccc',padding:28,fontSize:13}}>No deals yet.</div>}
+                  {deals.length===0 && <div style={{textAlign:'center',color:'#ccc',padding:28,fontSize:13}}>{t('dash.noDeals')}</div>}
                 </div>
                 <div className="card" style={{padding:20}}>
-                  <h3 style={{fontWeight:700,fontSize:15,marginBottom:16}}>Recent Activity</h3>
+                  <h3 style={{fontWeight:700,fontSize:15,marginBottom:16}}>{t('dash.recentActivity')}</h3>
                   {activities.slice(0,7).map(a=>(
                     <div key={a.id} style={{display:'flex',gap:12,paddingBottom:12}}>
                       <div style={{width:8,height:8,borderRadius:'50%',background:'#ff7a59',flexShrink:0,marginTop:5}}/>
                       <div><div style={{fontSize:13}}>{a.text}</div><div style={{fontSize:11,color:'#aaa',marginTop:2}}>{timeAgo(a.created_at)}</div></div>
                     </div>
                   ))}
-                  {activities.length===0 && <div style={{textAlign:'center',color:'#ccc',padding:28,fontSize:13}}>No activity yet.</div>}
+                  {activities.length===0 && <div style={{textAlign:'center',color:'#ccc',padding:28,fontSize:13}}>{t('dash.noActivity')}</div>}
                 </div>
               </div>
             </div>
@@ -534,7 +575,7 @@ export default function App() {
             <div style={{animation:'fadeUp 0.3s ease'}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20}}>
                 <div>
-                  <h1 style={{fontFamily:'Syne,sans-serif',fontWeight:800,fontSize:24}}>Contacts</h1>
+                  <h1 style={{fontFamily:'Syne,sans-serif',fontWeight:800,fontSize:24}}>{t('contacts.title')}</h1>
                   <p style={{color:'#888',fontSize:13,marginTop:2}}>{filtContacts.length} records</p>
                 </div>
                 <button className="btn-primary" onClick={()=>{setEditTarget(null);setModal('contact')}}>+ Add Contact</button>
@@ -612,6 +653,7 @@ export default function App() {
               contacts={contacts}
               activities={activities}
               userCan={userCan}
+              user={user}
               onNewDeal={() => { setEditTarget(null); setModal('deal') }}
               onEditDeal={d => { setEditTarget(d); setModal('deal') }}
               onRefresh={() => fetchAll(workspace.id)}
@@ -623,8 +665,10 @@ export default function App() {
             <ActivityLog
               activities={activities}
               contacts={contacts}
+              deals={deals}
               userCan={userCan}
-              onLogActivity={() => setModal('activity')}
+              onLogActivity={(parentAct) => { setFollowUpParent(parentAct || null); setModal('activity') }}
+              onLogFollowUp={(parentAct) => { setFollowUpParent(parentAct); setModal('activity') }}
               onRefresh={() => fetchAll(workspace.id)}
             />
           )}
@@ -634,7 +678,7 @@ export default function App() {
       {/* Modals */}
       {modal==='contact' && <ContactForm onSave={saveContact} onClose={()=>setModal(null)} saving={saving}/>}
       {modal==='deal'    && <DealForm initial={editTarget} contacts={contacts} stages={stages} onSave={saveDeal} onClose={()=>{setModal(null);setEditTarget(null)}} saving={saving}/>}
-      {modal==='activity' && <ActivityForm contacts={contacts} onSave={saveActivity} onClose={()=>setModal(null)} saving={saving}/>}
+      {modal==='activity' && <ActivityForm contacts={contacts} deals={deals} onSave={saveActivity} onClose={()=>{setModal(null);setFollowUpParent(null)}} saving={saving} parentActivity={followUpParent} />}
       {modal==='contact' && editTarget && <ContactForm initial={editTarget} onSave={saveContact} onClose={()=>{setModal(null);setEditTarget(null)}} saving={saving}/>}
 
       {selected && (

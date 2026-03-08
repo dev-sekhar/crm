@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { supabase } from './supabaseClient'
 import { DEFAULT_JOIN_ROLE } from './permissions'
+import { useTranslation } from './i18n'
 
 const Field = ({ label, children }) => (
   <div style={{ marginBottom: 16 }}>
@@ -53,6 +54,7 @@ const Success = ({ msg }) => msg ? (
 
 // ─── LOGIN ────────────────────────────────────────────────────
 export function Login({ onSwitch }) {
+  const { t } = useTranslation()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -70,12 +72,12 @@ export function Login({ onSwitch }) {
     <Card title="Welcome back" subtitle="Sign in to your HubClone workspace">
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Syne:wght@800&family=DM+Sans:wght@400;500;700&display=swap')`}</style>
       <Error msg={error} />
-      <Field label="Email"><Inp type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@company.com" onKeyDown={e => e.key === 'Enter' && handle()} /></Field>
-      <Field label="Password"><Inp type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" onKeyDown={e => e.key === 'Enter' && handle()} /></Field>
-      <Btn loading={loading} onClick={handle}>Sign In</Btn>
+      <Field label={t('auth.email')}><Inp type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@company.com" onKeyDown={e => e.key === 'Enter' && handle()} /></Field>
+      <Field label={t('auth.password')}><Inp type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" onKeyDown={e => e.key === 'Enter' && handle()} /></Field>
+      <Btn loading={loading} onClick={handle}>{t('auth.signIn')}</Btn>
       <p style={{ textAlign: 'center', marginTop: 20, fontSize: 13, color: '#888' }}>
-        Don't have an account?{' '}
-        <button onClick={() => onSwitch('register')} style={{ background: 'none', border: 'none', color: '#ff7a59', fontWeight: 700, cursor: 'pointer', fontSize: 13, fontFamily: 'inherit' }}>Create one</button>
+        {t('auth.noAccount')}{' '}
+        <button onClick={() => onSwitch('register')} style={{ background: 'none', border: 'none', color: '#ff7a59', fontWeight: 700, cursor: 'pointer', fontSize: 13, fontFamily: 'inherit' }}>{t('auth.signUp')}</button>
       </p>
     </Card>
   )
@@ -83,6 +85,7 @@ export function Login({ onSwitch }) {
 
 // ─── REGISTER ─────────────────────────────────────────────────
 export function Register({ onSwitch }) {
+  const { t } = useTranslation()
   const [form, setForm] = useState({ fullName: '', email: '', password: '', confirm: '' })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -110,15 +113,15 @@ export function Register({ onSwitch }) {
       <Error msg={error} />
       <Success msg={success} />
       {!success && <>
-        <Field label="Full Name"><Inp value={form.fullName} onChange={set('fullName')} placeholder="Jane Smith" /></Field>
-        <Field label="Work Email"><Inp type="email" value={form.email} onChange={set('email')} placeholder="jane@company.com" /></Field>
-        <Field label="Password"><Inp type="password" value={form.password} onChange={set('password')} placeholder="Min. 6 characters" /></Field>
+        <Field label={t('auth.fullName')}><Inp value={form.fullName} onChange={set('fullName')} placeholder="Jane Smith" /></Field>
+        <Field label={t('auth.email')}><Inp type="email" value={form.email} onChange={set('email')} placeholder="jane@company.com" /></Field>
+        <Field label={t('auth.password')}><Inp type="password" value={form.password} onChange={set('password')} placeholder="Min. 6 characters" /></Field>
         <Field label="Confirm Password"><Inp type="password" value={form.confirm} onChange={set('confirm')} placeholder="Repeat password" onKeyDown={e => e.key === 'Enter' && handle()} /></Field>
-        <Btn loading={loading} onClick={handle}>Create Account</Btn>
+        <Btn loading={loading} onClick={handle}>{t('auth.register')}</Btn>
       </>}
       <p style={{ textAlign: 'center', marginTop: 20, fontSize: 13, color: '#888' }}>
-        Already have an account?{' '}
-        <button onClick={() => onSwitch('login')} style={{ background: 'none', border: 'none', color: '#ff7a59', fontWeight: 700, cursor: 'pointer', fontSize: 13, fontFamily: 'inherit' }}>Sign in</button>
+        {t('auth.hasAccount')}{' '}
+        <button onClick={() => onSwitch('login')} style={{ background: 'none', border: 'none', color: '#ff7a59', fontWeight: 700, cursor: 'pointer', fontSize: 13, fontFamily: 'inherit' }}>{t('auth.signIn')}</button>
       </p>
     </Card>
   )

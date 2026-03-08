@@ -1,89 +1,121 @@
 # HubClone CRM
 
-A full HubSpot-style CRM built on **React + Supabase**. Multi-tenant workspaces, real-time data, and a complete Role-Based Access Control (RBAC) system.
-
----
-
-## Features
-
-| Feature | Details |
-|---|---|
-| **Authentication** | Email/password sign up and login via Supabase Auth |
-| **Multi-tenant Workspaces** | Each company gets its own isolated workspace — data never crosses between workspaces |
-| **Contacts** | Full CRUD with detail panel, timeline, and search |
-| **Deals** | Pipeline tracking with probability, close date, and value |
-| **Pipeline** | Kanban board view by deal stage |
-| **Activities** | Log calls, emails, meetings, and notes per contact |
-| **Dashboard** | Live metrics — pipeline value, win rate, revenue won, open deals |
-| **Real-time Sync** | Supabase Realtime — changes appear instantly across tabs and users |
-| **RBAC** | 5 built-in roles + custom roles with a visual permission matrix editor |
-| **Team Settings** | Invite members, change roles, manage permissions — all in-app |
-
----
+A full-stack HubSpot-style CRM built with React + Supabase. Multi-tenant, role-based, fully internationalised.
 
 ## Tech Stack
 
-| Layer | Technology |
-|---|---|
-| Frontend | React (react-scripts), plain CSS-in-JS |
-| Backend | Supabase (PostgreSQL + Auth + Realtime + RLS) |
-| Package manager | pnpm |
-| Permissions | Dynamic RLS policies + `usePermissions()` React hook |
+- **Frontend**: React 18 (react-scripts 5), inline styles, no CSS framework
+- **Backend**: Supabase (PostgreSQL + Auth + Realtime)
+- **Package manager**: pnpm
 
 ---
 
 ## Quick Start
 
-### 1. Create a Supabase Project
+### 1. Supabase Setup
 
-1. Go to [supabase.com](https://supabase.com) → New Project
-2. Choose a name, password, and region → Create
-3. Wait ~1 minute for the project to spin up
+In [Supabase](https://supabase.com) → SQL Editor, run these files **in order** from the `schema/` folder:
 
-### 2. Run the SQL files (in order)
+```
+schema/01_core_schema.sql
+schema/02_rbac_schema.sql
+schema/03_dynamic_rls.sql
+schema/04_stages_schema.sql
+schema/05_activity_enhancements.sql
+schema/06_rls_fixes.sql
+schema/07_fix_activity_constraints.sql   ← run if you get type constraint errors
+```
 
-In Supabase Dashboard → **SQL Editor**, run each file in order:
+Then seed your workspace (replace with your workspace UUID):
+```sql
+select seed_default_roles('YOUR_WORKSPACE_UUID');
+select seed_default_stages('YOUR_WORKSPACE_UUID');
+```
 
-| # | File | What it does |
-|---|---|---|
-| 1 | `supabase_schema.sql` | Creates core tables: workspaces, workspace_members, contacts, deals, activities |
-| 2 | `rbac_schema.sql` | Creates roles and role_permissions tables, seeds 5 default roles per workspace |
-| 3 | `dynamic_rls.sql` | Creates `has_permission()` function and all dynamic RLS policies |
+In Supabase → Authentication → Settings:
+- Disable **email confirmations** for local development
 
-> If you are setting up a fresh project, run all three. If upgrading an existing project, run only the files you have not run yet.
-
-### 3. Configure environment
-
-Copy `.env.example` to `.env` and fill in your Supabase credentials:
+### 2. Environment
 
 ```bash
 cp .env.example .env
+# Fill in your Supabase URL and anon key
 ```
 
-```env
-REACT_APP_SUPABASE_URL=https://your-project-id.supabase.co
-REACT_APP_SUPABASE_ANON_KEY=your-anon-public-key
+`.env`:
+```
+REACT_APP_SUPABASE_URL=https://xxx.supabase.co
+REACT_APP_SUPABASE_ANON_KEY=eyJ...
 ```
 
-Find these in Supabase Dashboard → **Settings → API**.
-
-### 4. Install and run
+### 3. Install & run
 
 ```bash
 pnpm install
 pnpm start
+# → http://localhost:3000
 ```
 
-App runs at **http://localhost:3000**
+---
 
-### 5. First-time setup in the app
+## Features
 
-1. Click **Register** → create your account
-2. On the workspace setup screen, click **Create new workspace**
-3. Enter a name and slug (e.g. `acme`, `kiritra`) → you become the **Owner**
-4. The CRM loads scoped to your workspace
+### CRM
+| Feature | Details |
+|---------|---------|
+| **Contacts** | Full CRUD, search, slide-in detail panel with deal & activity timeline |
+| **Deals** | List view, probability bars, linked to contacts and stages |
+| **Pipeline** | Kanban board, drag & drop between stages, deal detail modal |
+| **Activity** | Timeline with calls, emails, meetings, notes, tasks, stage changes |
+| **Dashboard** | Live metrics: pipeline value, revenue won, open deals, win rate |
 
-To invite teammates: share your workspace slug. They register, choose **Join existing workspace**, and enter the slug. They join as **Viewer** by default — promote them in Team Settings.
+### Activities
+
+| Type | Contact required | Overdue condition |
+|------|-----------------|-------------------|
+| call / email / meeting / note | Yes | `follow_up_date < now` AND not done |
+| **task** | No | `activity_at < now` AND not done |
+| stage_change | No | Never overdue |
+
+**Follow-up chains**: each activity can have a follow-up. Logging a follow-up creates a child activity linked via `parent_activity_id`. Chains are infinite and rendered recursively, indented.
+
+**Stage change notes**: moving a deal between stages prompts for a reason. A `stage_change` activity is auto-created and linked to the deal.
+
+### Pipeline
+- Drag & drop cards between stage columns
+- Clicking a card opens a full deal modal with activity timeline
+- Stage legend at the bottom explains each stage
+
+### Deal Stages
+- Workspace-scoped, fully editable in Team Settings → Deal Stages tab
+- Default stages: Lead → Contacted → Proposal → Negotiation → Won → Lost
+- Each stage has a colour, description, and Won/Lost/Default flags
+
+### RBAC (Role-based Access Control)
+
+5 built-in roles per workspace:
+
+| Role | CRM | Team |
+|------|-----|------|
+| Owner | Full | Full incl. manage_roles |
+| Admin | Full | invite + remove |
+| Sales Rep | Own records + view all | — |
+| Support Agent | Contacts + activities | — |
+| Viewer | Read-only | — |
+
+Roles and permissions are fully editable in Team Settings → Roles & Permissions.
+
+### Internationalisation (i18n)
+
+9 languages included: English, Español, Français, Deutsch, Português, हिन्दी, 日本語, 中文, العربية (RTL supported).
+
+Language is persisted in `localStorage`. Switch via the flag picker at the bottom of the sidebar.
+
+To add a new language:
+1. Open `src/i18n.js`
+2. Add an entry to `LANGUAGES`
+3. Add a translation object to `translations`
+4. All untranslated keys fall back to English automatically
 
 ---
 
@@ -91,125 +123,45 @@ To invite teammates: share your workspace slug. They register, choose **Join exi
 
 ```
 hubclone/
-├── .env                      ← Your Supabase credentials (never commit this)
-├── .env.example              ← Template for .env
+├── schema/                     # SQL migrations (run in order)
+│   ├── 01_core_schema.sql
+│   ├── 02_rbac_schema.sql
+│   ├── 03_dynamic_rls.sql
+│   ├── 04_stages_schema.sql
+│   ├── 05_activity_enhancements.sql
+│   ├── 06_rls_fixes.sql
+│   └── 07_fix_activity_constraints.sql
+├── docs/
+│   ├── SCHEMA.md               # Full DB reference
+│   └── PERMISSIONS.md          # RBAC documentation
+├── src/
+│   ├── i18n.js                 # Translations + useTranslation hook
+│   ├── App.jsx                 # Main app shell + CRUD logic
+│   ├── Auth.jsx                # Login / Register / WorkspaceSetup
+│   ├── Pipeline.jsx            # Kanban board + deal modal + stage change prompt
+│   ├── ActivityLog.jsx         # Timeline, task list, follow-up chains
+│   ├── StageManager.jsx        # Stage workflow editor
+│   ├── TeamSettings.jsx        # Members, roles, stages tabs
+│   ├── permissions.js          # RBAC hook + constants
+│   └── supabaseClient.js       # Supabase client
+├── .env.example
 ├── .gitignore
-├── package.json
-│
-├── supabase_schema.sql       ← Step 1: core tables + RLS setup
-├── rbac_schema.sql           ← Step 2: roles, permissions, default role seeding
-├── dynamic_rls.sql           ← Step 3: has_permission() + dynamic RLS policies
-│
-├── PERMISSIONS.md            ← Full RBAC documentation
-│
-├── public/
-│   └── index.html
-│
-└── src/
-    ├── index.js
-    ├── supabaseClient.js     ← Supabase client (reads from .env)
-    ├── permissions.js        ← RBAC config, constants, usePermissions() hook
-    ├── App.jsx               ← Main CRM app (auth-aware, workspace-scoped)
-    ├── Auth.jsx              ← Login, Register, WorkspaceSetup screens
-    └── TeamSettings.jsx      ← Team members + roles & permissions editor
+└── package.json
 ```
 
 ---
 
-## RBAC System
+## Adding Translations
 
-HubClone has a full Role-Based Access Control system. See [PERMISSIONS.md](./PERMISSIONS.md) for complete documentation.
+All user-facing strings are keyed in `src/i18n.js`. The pattern is:
 
-### Built-in Roles (quick reference)
+```js
+// Simple string
+t('nav.deals')                          // → "Deals"
 
-| Role | CRM Access | Team Access | Notes |
-|---|---|---|---|
-| **Owner** | Full | Full incl. manage roles | Locked — cannot be changed by anyone |
-| **Admin** | Full | Invite + remove members | Cannot manage roles |
-| **Sales Rep** | Own records + view all | None | Default for promoted members |
-| **Support Agent** | Contacts + activities only | None | No deal access |
-| **Viewer** | Read-only | None | **Default role on join** |
-
-### Changing permissions
-
-Owner and Admin can edit role permissions via the in-app UI:
-
-> **Sidebar → 👥 Team Settings → Roles & Permissions → ✏ Edit**
-
-Changes take effect immediately for all users with that role — no restart needed.
-
-### Custom roles
-
-Admins and Owners can create custom roles with any combination of permissions:
-
-> **Team Settings → Roles & Permissions → + New Role**
-
----
-
-## Permission Architecture
-
-Permissions are enforced at two independent layers:
-
-```
-User action (e.g. delete a contact)
-        │
-        ▼
-┌───────────────────┐
-│   UI Layer        │  usePermissions() hook in permissions.js
-│   React / JS      │  → hides buttons the user cannot use
-│                   │  → loaded from DB on login
-└────────┬──────────┘
-         │ API call made if UI allows
-         ▼
-┌───────────────────┐
-│   DB Layer        │  has_permission() Postgres function
-│   Supabase RLS    │  → checks role_permissions table on every query
-│                   │  → blocks unauthorized requests even via curl/Postman
-└───────────────────┘
+// With interpolation
+t('deals.count', { count: 5 })          // → "5 deals"
+t('common.error', { msg: 'Not found' }) // → "Error: Not found"
 ```
 
-The `role_permissions` table is the **single source of truth** — both layers read from it, so they are always in sync.
-
----
-
-## Data Model
-
-```
-workspaces
-    └── workspace_members  (links users to workspaces, with role_id)
-    └── roles              (Owner, Admin, Sales Rep, Support Agent, Viewer + custom)
-         └── role_permissions  (resource + action pairs per role)
-    └── contacts           (workspace-scoped, with created_by)
-    └── deals              (workspace-scoped, with created_by)
-    └── activities         (workspace-scoped, linked to contacts)
-```
-
-All CRM data (contacts, deals, activities) is scoped to a workspace_id. Users from different workspaces never see each other's data.
-
----
-
-## Deploy to Production
-
-```bash
-pnpm run build
-```
-
-Deploy the `build/` folder to **Vercel** (easiest):
-
-```bash
-npx vercel --prod
-```
-
-Add your `REACT_APP_SUPABASE_URL` and `REACT_APP_SUPABASE_ANON_KEY` as environment variables in the Vercel dashboard.
-
----
-
-## Troubleshooting
-
-| Error | Fix |
-|---|---|
-| `new row violates row-level security` | RLS is enabled but permissions are not seeded. Run `rbac_schema.sql` then: `select seed_default_roles(id) from workspaces where slug = 'your-slug';` |
-| `Workspace not found` on join | Run the `get_workspace_by_slug` function creation from `rls_fix_v2.sql` |
-| Blank role name in sidebar | Your member record has no `role_id`. Run the member migration SQL in `rbac_schema.sql` comments |
-| Buttons missing (no + Contact etc.) | Your role has no permissions yet. Go to Team Settings → Roles → edit your role |
-| `function not found` error | The `has_permission` or `create_workspace_with_owner` function was not created. Re-run the relevant SQL file |
+Missing keys fall back to English, then to the key itself — so partially translated languages still work.
